@@ -21,6 +21,7 @@ logfile=$configfolder/battery.log
 maintain_percentage_tracker_file=$configfolder/maintain.percentage
 daemon_path=$HOME/Library/LaunchAgents/battery.plist
 
+PATH=$PATH:$binfolder
 ## ###############
 ## Housekeeping
 ## ###############
@@ -32,7 +33,7 @@ mkdir -p $configfolder
 touch $logfile
 
 # Trim logfile if needed
-logsize=$(stat -f%z "$logfile")
+logsize=$(/usr/bin/stat -f%z "$logfile")
 max_logsize_bytes=5000000
 if ((logsize > max_logsize_bytes)); then
 	tail -n 100 $logfile >$logfile
@@ -166,15 +167,15 @@ function disable_discharging() {
 # so I'm using both since with only CH0B I noticed sometimes during sleep it does trigger charging
 function enable_charging() {
 	log "🔌🔋 Enabling battery charging"
-	sudo smc -k CH0B -w 00
-	sudo smc -k CH0C -w 00
+	sudo $binfolder/smc -k CH0B -w 00
+	sudo $binfolder/smc -k CH0C -w 00
 	disable_discharging
 }
 
 function disable_charging() {
 	log "🔌🪫 Disabling battery charging"
-	sudo smc -k CH0B -w 02
-	sudo smc -k CH0C -w 02
+	sudo $binfolder/smc -k CH0B -w 02
+	sudo $binfolder/smc -k CH0C -w 02
 }
 
 function get_smc_charging_status() {
@@ -436,7 +437,9 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 		log "Discharge pre battery-maintenance complete, continuing to battery maintenance loop"
 	else
 		log "Not triggering discharge as it is not requested"
-	fi
+    fi
+    # Store pid of maintenance process and setting
+	echo $$ > $pidfile
 
 	# Start charging
 	battery_percentage=$(get_battery_percentage)
