@@ -4,7 +4,7 @@
 ## Update management
 ## variables are used by this binary as well at the update script
 ## ###############
-BATTERY_CLI_VERSION="v1.2.5"
+BATTERY_CLI_VERSION="v1.2.7"
 
 # Path fixes for unexpected environments
 PATH=/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
@@ -84,7 +84,7 @@ Usage:
     manually set the adapter to (not) charge even when plugged in
     eg: battery adapter off
 
-  battery calibrate 
+  battery calibrate
     calibrate the battery by discharging it to 15%, then recharging it to 100%, and keeping it there for 1 hour
 
   battery charge LEVEL[1-100]
@@ -146,6 +146,13 @@ function valid_percentage() {
 	else
 		return 0
 	fi
+}
+
+function valid_voltage() {
+	if [[ "$1" =~ ^[0-9]+(\.[0-9]+)?V$ ]]; then
+		return 0
+	fi
+	return 1
 }
 
 ## #################
@@ -516,11 +523,6 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 		log "🚨 Calibration process have been stopped"
 	fi
 
-	if ! valid_percentage "$setting"; then
-		log "Error: $setting is not a valid setting for battery maintain. Please use a number between 0 and 100"
-		exit 1
-	fi
-
 	# Recover old maintain status if old setting is found
 	if [[ "$setting" == "recover" ]]; then
 
@@ -535,6 +537,11 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 			log "No setting to recover, exiting"
 			exit 0
 		fi
+	fi
+
+	if ! valid_percentage "$setting"; then
+		log "Error: $setting is not a valid setting for battery maintain. Please use a number between 0 and 100"
+		exit 1
 	fi
 
 	# Check if the user requested that the battery maintenance first discharge to the desired level
@@ -646,6 +653,7 @@ if [[ "$action" == "maintain" ]]; then
 
 	# Kill old process silently
 	if test -f "$pidfile"; then
+		log "Killing old maintain process at $(cat $pidfile)"
 		pid=$(cat "$pidfile" 2>/dev/null)
 		kill $pid &>/dev/null
 	fi
@@ -660,6 +668,7 @@ if [[ "$action" == "maintain" ]]; then
 		log "Killing running maintain daemons & enabling charging as default state"
 		rm $pidfile 2>/dev/null
 		$battery_binary disable_daemon
+		enable_charging
 		$battery_binary status
 		exit 0
 	fi
@@ -680,10 +689,10 @@ if [[ "$action" == "maintain" ]]; then
 	else
 	# Check if setting is a voltage
 	is_voltage=false
-	if [[ "$setting" =~ ^[0-9]+(\.[0-9]+)?V$ ]]; then
+	if valid_voltage "$setting"; then
 		setting="${setting//V/}"
 
-		if [[ "$subsetting" =~ ^[0-9]+(\.[0-9]+)?V$ ]]; then
+		if valid_voltage "$subsetting"; then
 			subsetting="${subsetting//V/}"
 		else
 			subsetting="0.1"
@@ -699,10 +708,9 @@ if [[ "$action" == "maintain" ]]; then
 		fi
 
 		is_voltage=true
-	fi
 
 	# Check if setting is value between 0 and 100
-	if ! valid_percentage "$setting"; then
+	elif ! valid_percentage "$setting"; then
 		log "Called with $setting $action"
 		# If setting is not a special keyword, exit with an error.
 		if ! { [[ "$setting" == "stop" ]] || [[ "$setting" == "recover" ]]; }; then
@@ -712,14 +720,12 @@ if [[ "$action" == "maintain" ]]; then
 	fi
 
 	# Start maintenance script
-	log "Starting battery maintenance at $setting% $subsetting"
-	nohup $battery_binary maintain_synchronous $setting $subsetting >>$logfile &
 	if [ "$is_voltage" = true ]; then
 		log "Starting battery maintenance at ${setting}V ±${subsetting}V"
-		nohup battery maintain_voltage_synchronous $setting $subsetting >>$logfile &
+		nohup $battery_binary maintain_voltage_synchronous $setting $subsetting >>$logfile &
 	else
 		log "Starting battery maintenance at $setting% $subsetting"
-		nohup battery maintain_synchronous $setting $subsetting >>$logfile &
+		nohup $battery_binary maintain_synchronous $setting $subsetting >>$logfile &
 	fi
 
 	# Store pid of maintenance process and setting
