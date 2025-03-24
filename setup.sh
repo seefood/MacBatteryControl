@@ -37,7 +37,7 @@ rm $batteryfolder/repo.zip
 echo "[ 3 ] Move smc to executable folder"
 sudo mkdir -p $binfolder
 sudo cp $batteryfolder/dist/smc $binfolder
-sudo chown $calling_user $binfolder/smc
+sudo chown "$calling_user" $binfolder/smc
 sudo chmod 755 $binfolder/smc
 sudo chmod +x $binfolder/smc
 
@@ -46,27 +46,27 @@ sudo cp $batteryfolder/battery.sh $binfolder/battery
 
 echo "[ 5 ] Setting correct file permissions for $calling_user"
 # Set permissions for battery executables
-sudo chown -R $calling_user $binfolder/battery
+sudo chown -R "$calling_user" $binfolder/battery
 sudo chmod 755 $binfolder/battery
 sudo chmod +x $binfolder/battery
 
 # Set permissions for logfiles
-mkdir -p $configfolder
-sudo chown -R $calling_user $configfolder
+mkdir -p "$configfolder"
+sudo chown -R "$calling_user" "$configfolder"
 
-touch $logfile
-sudo chown $calling_user $logfile
-sudo chmod 755 $logfile
+touch "$logfile"
+sudo chown "$calling_user" "$logfile"
+sudo chmod 755 "$logfile"
 
-touch $pidfile
-sudo chown $calling_user $pidfile
-sudo chmod 755 $pidfile
+touch "$pidfile"
+sudo chown "$calling_user" "$pidfile"
+sudo chmod 755 "$pidfile"
 
-sudo chown $calling_user $binfolder/battery
+sudo chown "$calling_user" $binfolder/battery
 
 echo "[ 6 ] Setting up visudo declarations"
-sudo $batteryfolder/battery.sh visudo $USER
-sudo chown -R $calling_user $configfolder
+sudo $batteryfolder/battery.sh visudo "$USER"
+sudo chown -R "$calling_user" "$configfolder"
 
 # Remove tempfiles
 cd ../..

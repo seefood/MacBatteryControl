@@ -113,7 +113,7 @@ const generate_app_menu = async () => {
                     app.quit()
                 }
             }
-            
+
         ] )
     } catch ( e ) {
         log( `Error generating menu: `, e )
@@ -154,7 +154,7 @@ const refresh_tray = async ( force_interactive_refresh = false ) => {
     }
     tray.setContextMenu( new_menu )
 
-    // Refresh timer 
+    // Refresh timer
     log( `Resetting interface timer speed` )
     set_interface_update_timer()
 
@@ -182,7 +182,7 @@ async function set_initial_interface() {
 
     // Set "loading" context
     tray.setTitle( '  updating...' )
-    
+
     log( "Tray app boot complete" )
 
     log( "Triggering boot-time auto-update" )

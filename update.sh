@@ -20,13 +20,13 @@ curl -sS -o $batteryfolder/battery.sh https://raw.githubusercontent.com/actually
 
 echo "[ 2 ] Writing script to $binfolder/battery"
 cp $batteryfolder/battery.sh $binfolder/battery
-chown $USER $binfolder/battery
+chown "$USER" $binfolder/battery
 chmod 755 $binfolder/battery
 chmod u+x $binfolder/battery
 
 # Remove tempfiles
-cd
-rm -rf $tempfolder
+cd "$HOME" || true
+rm -rf "$tempfolder"
 echo "[ 3 ] Removed temporary folder"
 
 echo -e "\n🎉 Battery tool updated.\n"

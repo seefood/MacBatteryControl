@@ -7,9 +7,9 @@ const { notarize } = require( '@electron/notarize' )
 const log = ( ...messages ) => console.log( ...messages )
 
 exports.default = async function notarizing( context ) {
-    
+
     log( '\n\n🪝 afterSign hook triggered: ' )
-    const { appOutDir } = context 
+    const { appOutDir } = context
     const { APPLEID, APPLEIDPASS, TEAMID } = process.env
     const appName = context.packager.appInfo.productFilename
 
