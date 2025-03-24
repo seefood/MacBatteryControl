@@ -40,7 +40,7 @@ mkdir -p "$configfolder"
 touch "$logfile"
 
 # Trim logfile if needed
-logsize=$(stat -f%z "$logfile")
+logsize=$(/usr/bin/stat -f%z "$logfile")
 max_logsize_bytes=5000000
 if ((logsize > max_logsize_bytes)); then
 	tail -n 100 "$logfile" >"$logfile".tmp && mv "$logfile".tmp "$logfile"
@@ -58,6 +58,14 @@ Usage:
   battery logs LINES[integer, optional]
     output logs of the battery CLI and GUI
 	eg: battery logs 100
+
+  battery maintain Range[minvalue-maxvalue/stop]
+    reboot-persistent battery level maintenance. There are two modes:
+      range mode:
+        turn off charging above the maximum value, and on below the minimum value.
+    it has the option of a --force-discharge flag that discharges even when plugged in (this does NOT work well with clamshell mode)
+    eg: battery maintain 20-80        // range mode
+    eg: battery maintain stop         // disable maintain mode
 
   battery maintain PERCENTAGE[1-100,stop]
     reboot-persistent battery level maintenance: turn off charging above, and on below a certain value
@@ -141,6 +149,20 @@ function valid_percentage() {
 	else
 		return 0
 	fi
+}
+
+# format: 30-40
+function valid_range_percentage() {
+	if [[ "$1" =~ ^[0-9]+-[0-9]+$ ]]; then
+		IFS=- read lower_threshold upper_threshold <<<"$1"
+		if [[ "$lower_threshold" -gt 0 && "$lower_threshold" -le 100 &&
+		    "$upper_threshold" -gt 0 && "$upper_threshold" -le 100 &&
+		    "$lower_threshold" -le "$upper_threshold" ]];then
+            return 0
+        fi
+    fi
+    log "invalid range percentage:$1"
+    return 1
 }
 
 function valid_voltage() {
@@ -227,15 +249,15 @@ function disable_discharging() {
 # so I'm using both since with only CH0B I noticed sometimes during sleep it does trigger charging
 function enable_charging() {
 	log "🔌🔋 Enabling battery charging"
-	sudo smc -k CH0B -w 00
-	sudo smc -k CH0C -w 00
+	sudo $binfolder/smc -k CH0B -w 00
+	sudo $binfolder/smc -k CH0C -w 00
 	disable_discharging
 }
 
 function disable_charging() {
 	log "🔌🪫 Disabling battery charging"
-	sudo smc -k CH0B -w 02
-	sudo smc -k CH0C -w 02
+	sudo $binfolder/smc -k CH0B -w 02
+	sudo $binfolder/smc -k CH0C -w 02
 }
 
 function get_smc_charging_status() {
@@ -534,7 +556,7 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 		fi
 	fi
 
-	if ! valid_percentage "$setting"; then
+	if ! valid_percentage "$setting" && ! valid_range_percentage "$setting"; then
 		log "Error: $setting is not a valid setting for battery maintain. Please use a number between 0 and 100"
 		exit 1
 	fi
@@ -547,40 +569,48 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 		log "Discharge pre battery-maintenance complete, continuing to battery maintenance loop"
 	else
 		log "Not triggering discharge as it is not requested"
-	fi
+    fi
+    # Store pid of maintenance process and setting
+	echo $$ > $pidfile
 
 	# Start charging
 	battery_percentage=$(get_battery_percentage)
 
-	log "Charging to and maintaining at $setting% from $battery_percentage%"
+	IFS=- read lower_threshold upper_threshold <<<"$setting"
+	[ -z "$upper_threshold" ] && upper_threshold=$lower_threshold
 
+	if [ "$lower_threshold" -eq "$upper_threshold" ];then
+		log "Charging to and maintaining at $lower_threshold% from $battery_percentage%"
+	else
+		log "Charging to and maintaining in range of $lower_threshold% to $upper_threshold% from $battery_percentage%"
+	fi
+
+	
 	# Loop until battery percent is exceeded
 	while true; do
 
 		# Keep track of status
 		is_charging=$(get_smc_charging_status)
 		ac_attached=$(get_charger_state)
-
-		if [[ "$battery_percentage" -ge "$setting" && ("$is_charging" == "enabled" || "$ac_attached" == "1") ]]; then
-
-			log "Charge above $setting"
-			if [[ "$is_charging" == "enabled" ]]; then
-				disable_charging
-			fi
+		
+		if [[ "$battery_percentage" -ge "$upper_threshold" && ("$is_charging" == "enabled" || "$ac_attached" == "1") ]]; then
+			log "above $upper_threshold, stop charging"
+			disable_charging
 			change_magsafe_led_color "green"
 
-		elif [[ "$battery_percentage" -lt "$setting" && "$is_charging" == "disabled" ]]; then
+		elif [[ "$battery_percentage" -lt "$lower_threshold" && "$is_charging" == "disabled" ]]; then
 
-			log "Charge below $setting"
+			log "below $lower_threshold, begin charging"
 			enable_charging
 			change_magsafe_led_color "orange"
-
+		elif [ -z "$first_enter" ];then
+			log "keep current status in maintain mode. battery_percentage:$battery_percentage lower:$lower_threshold upper:$upper_threshold is_charging:$is_charging ac_attached:$ac_attached"
+			first_enter=false
 		fi
 
 		sleep 60
 
 		battery_percentage=$(get_battery_percentage)
-
 	done
 
 	exit 0
@@ -660,9 +690,16 @@ if [[ "$action" == "maintain" ]]; then
 		exit 0
 	fi
 
-	# Check if setting is a voltage
 	is_voltage=false
-	if valid_voltage "$setting"; then
+	# Check if setting is range mode
+	if [[ "$setting" =~ ^[0-9]+-[0-9]+$ ]];then
+		log "Called with range $setting $action"
+        if ! valid_range_percentage "$setting";then
+			log "Error: $setting is not a valid range setting for battery maintain. The min/max value should between 1 and 100. A range example like 30-80"
+			exit 1
+		fi
+	# Check if setting is a voltage
+	elif valid_voltage "$setting"; then
 		setting="${setting//V/}"
 
 		if valid_voltage "$subsetting"; then
@@ -687,7 +724,7 @@ if [[ "$action" == "maintain" ]]; then
 		log "Called with $setting $action"
 		# If non 0-100 setting is not a special keyword, exit with an error.
 		if ! { [[ "$setting" == "stop" ]] || [[ "$setting" == "recover" ]]; }; then
-			log "Error: $setting is not a valid setting for battery maintain. Please use a number between 0 and 100, or an action keyword like 'stop' or 'recover'."
+			log "Error: $setting is not a valid setting for battery maintain. Please use a number between 1 and 100, or an action keyword like 'stop' or 'recover'."
 			exit 1
 		fi
 
